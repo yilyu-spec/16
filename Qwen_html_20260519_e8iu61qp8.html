@@ -1,0 +1,235 @@
+<!-- 
+// LIMITATIONS & CONSTRAINTS
+• Клиентский SPA без бэкенда. 0 серверной логики, 0 API-вызовов.
+• Данные хранятся только в localStorage устройства пользователя. Не шифруются. Теряются при очистке кэша.
+• Не заменяет очную консультацию юриста/адвоката. Не несёт ответственности за решения пользователя.
+• Не проверяет актуальность норм РФ в реальном времени. Зависит от модели ИИ, в которую вставляется промпт.
+• Качество ответа зависит от точности ввода пользователя и поведения стороннего ИИ-сервиса.
+• Базовая защита от копирования (отключение ПКМ, Ctrl+S/U, F12) обходится при отключении JS. Не является полноценным DRM.
+• Требует поддержки ES6+, Flexbox/Grid, Clipboard API. Может некорректно работать в браузерах старее 2016 г.
+• Работает только на статических хостингах. Не поддерживает авторизацию, аналитику, серверные заголовки.
+• Сгенерированный промпт не гарантирует идентичный результат в разных версиях/настройках ИИ-моделей.
+-->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';">
+  <title>Конструктор промптов для неюриста</title>
+  <meta name="description" content="Инструмент для превращения размытых запросов в чёткие инструкции для ИИ по праву РФ">
+  <style>
+    :root{--bg:#fff;--text:#1f2937;--muted:#6b7280;--border:#e5e7eb;--primary:#2563eb;--primary-hover:#1d4ed8;--error:#dc2626;--focus:#3b82f6;--step-bg:#f9fafb}
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;line-height:1.5;color:var(--text);background:var(--bg);-webkit-text-size-adjust:100%}
+    .container{max-width:640px;margin:0 auto;padding:1rem}
+    header{padding:1rem 0;border-bottom:1px solid var(--border);margin-bottom:1.5rem}
+    h1{font-size:1.25rem;font-weight:600}
+    .progress{display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem}
+    .progress-bar{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+    .progress-fill{height:100%;background:var(--primary);width:20%;transition:width .15s}
+    .progress-steps{display:flex;list-style:none;font-size:0.75rem;color:var(--muted)}
+    .progress-steps li{margin:0 2px;padding:2px 6px;border-radius:3px}
+    .progress-steps li.active{background:var(--primary);color:#fff}
+    .step{display:none}
+    .step.active{display:block}
+    .form-group{margin-bottom:1rem}
+    label{display:block;font-weight:500;margin-bottom:0.35rem;font-size:0.95rem}
+    .hint{font-size:0.8rem;color:var(--muted);margin-top:0.15rem}
+    input,textarea,select{width:100%;padding:0.65rem 0.75rem;border:1px solid var(--border);border-radius:6px;font-size:1rem;background:#fff;color:var(--text);transition:border-color .15s}
+    input:focus,textarea:focus,select:focus{outline:2px solid var(--focus);border-color:transparent}
+    textarea{min-height:100px;resize:vertical}
+    .checkbox-group{display:flex;flex-direction:column;gap:0.5rem;margin:0.5rem 0}
+    .checkbox-item{display:flex;align-items:flex-start;gap:0.5rem}
+    .checkbox-item input{width:auto;margin-top:0.25rem}
+    .error-msg{color:var(--error);font-size:0.8rem;margin-top:0.25rem}
+    [aria-invalid="true"]{border-color:var(--error)!important}
+    .nav-buttons{display:flex;gap:0.5rem;margin-top:1.5rem;flex-wrap:wrap}
+    button{min-height:44px;padding:0.65rem 1rem;background:var(--primary);color:#fff;border:none;border-radius:6px;font-size:1rem;cursor:pointer;transition:background .15s}
+    button:hover{background:var(--primary-hover)}
+    button:disabled{background:var(--muted);cursor:not-allowed}
+    .btn-secondary{background:var(--bg);color:var(--text);border:1px solid var(--border)}
+    .btn-secondary:hover{background:var(--step-bg)}
+    .btn-danger{background:#fff;color:var(--error);border:1px solid var(--error)}
+    .btn-danger:hover{background:#fef2f2}
+    #prompt-output{background:var(--step-bg);border:1px solid var(--border);border-radius:6px;padding:1rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.9rem;white-space:pre-wrap;word-break:break-word;max-height:40vh;overflow:auto;margin:1rem 0}
+    .action-buttons{display:flex;gap:0.5rem;flex-wrap:wrap;margin:1rem 0}
+    .app-footer{position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-top:1px solid var(--border);padding:0.6rem 1rem;text-align:center;font-size:0.7rem;color:var(--muted);z-index:50}
+    @media(max-width:480px){.container{padding:0.75rem}.nav-buttons,.action-buttons{flex-direction:column}button{width:100%}}
+    @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header><h1>Конструктор промптов для неюриста</h1></header>
+    
+    <div class="progress" aria-label="Прогресс заполнения">
+      <div class="progress-bar"><div id="progress-fill" class="progress-fill" role="progressbar" aria-valuenow="20" aria-valuemin="0" aria-valuemax="100"></div></div>
+      <ol id="progress-steps" class="progress-steps">
+        <li aria-current="step">1</li><li>2</li><li>3</li><li>4</li><li>5</li>
+      </ol>
+    </div>
+
+    <form id="prompt-builder" novalidate>
+      <!-- Шаг 1: Контекст + Навигатор -->
+      <fieldset class="step active" data-step="1" aria-hidden="false">
+        <legend>Шаг 1: Опишите ситуацию</legend>
+        <div class="form-group">
+          <label for="situation">Что произошло? *</label>
+          <textarea id="situation" name="situation" aria-required="true" aria-describedby="situation-hint" placeholder="Например: работодатель не выплачивает зарплату 2 месяца"></textarea>
+          <div id="situation-hint" class="hint">Опишите факты без эмоций. Когда, кто, что сделал.</div>
+        </div>
+        <div class="form-group">
+          <label for="timeline">Когда это произошло?</label>
+          <input type="date" id="timeline" name="timeline" aria-describedby="timeline-hint">
+          <div id="timeline-hint" class="hint">Для проверки сроков исковой давности</div>
+        </div>
+        <div class="form-group">
+          <label for="category">Сфера жизни *</label>
+          <select id="category" name="category" aria-required="true">
+            <option value="">Выберите...</option>
+            <option value="Гражданский спор (долги, сделки, имущество)">Гражданский спор (долги, сделки, имущество)</option>
+            <option value="Трудовые отношения (увольнение, зарплата)">Трудовые отношения</option>
+            <option value="Семья и наследство">Семья и наследство</option>
+            <option value="Защита прав потребителей (ЖКУ, товары, услуги)">Защита прав потребителей</option>
+            <option value="Административные вопросы (штрафы, ГИБДД)">Административные вопросы</option>
+            <option value="Неопределено (пусть ИИ предложит квалификацию)">Не знаю / другое</option>
+          </select>
+        </div>
+        <div class="nav-buttons"><button type="button" class="btn-next">Далее</button></div>
+      </fieldset>
+
+      <!-- Шаг 2: Цель и Роль -->
+      <fieldset class="step" data-step="2" aria-hidden="true">
+        <legend>Шаг 2: Цель и роль ИИ</legend>
+        <div class="form-group">
+          <label for="goal">Какой результат вам нужен? *</label>
+          <input type="text" id="goal" name="goal" aria-required="true" placeholder="Например: понять, куда жаловаться и какие документы собрать">
+        </div>
+        <div class="form-group">
+          <label for="role_preset">Кем должен быть ИИ? *</label>
+          <select id="role_preset" name="role_preset" aria-required="true">
+            <option value="jurist-praktik">Юрист-практик РФ</option>
+            <option value="pravovoy-navigator">Правовой навигатор</option>
+            <option value="sudebniy-strateg">Судебный стратег</option>
+          </select>
+        </div>
+        <div class="nav-buttons">
+          <button type="button" class="btn-secondary btn-back">Назад</button>
+          <button type="button" class="btn-next">Далее</button>
+        </div>
+      </fieldset>
+
+      <!-- Шаг 3: Формат и Потребности -->
+      <fieldset class="step" data-step="3" aria-hidden="true">
+        <legend>Шаг 3: Что уже есть и что нужно</legend>
+        <div class="form-group">
+          <label for="context">Что уже есть / что пробовали?</label>
+          <textarea id="context" name="context" placeholder="Документы, переписка, обращения в органы"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Что должно быть в ответе ИИ? *</label>
+          <div class="checkbox-group" role="group" aria-label="Требуемый вывод">
+            <label class="checkbox-item"><input type="checkbox" name="needs" value="оценка" /> Правовая оценка ситуации</label>
+            <label class="checkbox-item"><input type="checkbox" name="needs" value="документы" /> Образцы документов</label>
+            <label class="checkbox-item"><input type="checkbox" name="needs" value="чек-лист" /> Практический чек-лист</label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="format">Как подать ответ? *</label>
+          <select id="format" name="format" aria-required="true">
+            <option value="step-by-step">Пошаговая инструкция</option>
+            <option value="table">Таблица с пояснениями</option>
+            <option value="checklist-focus">Чек-лист + образцы</option>
+            <option value="comprehensive">Развёрнутый разбор</option>
+          </select>
+        </div>
+        <div class="nav-buttons">
+          <button type="button" class="btn-secondary btn-back">Назад</button>
+          <button type="button" class="btn-next">Далее</button>
+        </div>
+      </fieldset>
+
+      <!-- Шаг 4: Условия и Комплаенс -->
+      <fieldset class="step" data-step="4" aria-hidden="true">
+        <legend>Шаг 4: Правила для ИИ</legend>
+        <div class="checkbox-group">
+          <label class="checkbox-item">
+            <input type="checkbox" id="dialogue_mode" name="dialogue_mode" />
+            <span>Режим диалога: если данных мало, ИИ сначала задаст уточняющие вопросы</span>
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" id="strict_citations" name="strict_citations" checked />
+            <span>Строгие ссылки на законы: каждый тезис со ссылкой на статью НПА РФ</span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label for="extra_constraints">Дополнительные требования</label>
+          <textarea id="extra_constraints" name="extra_constraints" placeholder="Например: не предлагать суд, только досудебное урегулирование"></textarea>
+        </div>
+        <div class="nav-buttons">
+          <button type="button" class="btn-secondary btn-back">Назад</button>
+          <button type="button" class="btn-next">Получить промпт</button>
+        </div>
+      </fieldset>
+
+      <!-- Шаг 5: Результат -->
+      <fieldset class="step" data-step="5" aria-hidden="true">
+        <legend>Ваш промпт готов</legend>
+        <p class="hint">Скопируйте текст ниже и вставьте в любой ИИ-ассистент (GigaChat, Gemini, Qwen, Perplexity).</p>
+        <pre id="prompt-output" aria-live="polite"></pre>
+        <div class="action-buttons">
+          <button type="button" id="btn-copy" class="btn-copy">📋 Копировать промпт</button>
+          <button type="button" id="btn-save" class="btn-secondary">💾 Сохранить .txt</button>
+          <button type="button" id="btn-clear" class="btn-danger">🗑️ Очистить форму</button>
+        </div>
+        <div class="nav-buttons">
+          <button type="button" class="btn-secondary btn-back">Назад</button>
+        </div>
+      </fieldset>
+    </form>
+  </div>
+
+  <footer class="app-footer">
+    <p>© <span id="cpy-year"></span>. Конструктор промптов. Лицензия CC BY-NC-ND 4.0. Запрещено коммерческое использование, модификация и распространение без письменного согласия автора.</p>
+  </footer>
+
+  <script>
+  // === MODULE 1: STATE & NAVIGATION ===
+  (function(){'use strict';const CFG={KEY:'pb_v1',STEPS:5,DEBOUNCE:300};let state={step:1,fields:{}};const store={get(){try{const r=localStorage.getItem(CFG.KEY);return r?JSON.parse(r):null}catch{e}return null},set(d){try{localStorage.setItem(CFG.KEY,JSON.stringify(d))}catch{e}},clear(){try{localStorage.removeItem(CFG.KEY)}catch{e}}};let form,pb,ps;function valid(s){const fs=document.querySelector(`.step[data-step="${s}"]`);if(!fs)return!0;fs.querySelectorAll('.error-msg').forEach(e=>e.remove());let ok=!0;fs.querySelectorAll('[aria-required="true"]').forEach(inp=>{const v=inp.type==='checkbox'?inp.checked:inp.value.trim();if(!v){ok=!1;err(inp,'Обязательное поле')}});return ok}function err(inp,msg){inp.setAttribute('aria-invalid','true');const id=`e-${inp.id||inp.name}`;let el=document.getElementById(id);if(!el){el=document.createElement('div');el.id=id;el.className='error-msg';el.style.cssText='color:#dc2626;font-size:.8rem;margin-top:.25rem';inp.closest('.form-group')?.appendChild(el)}el.textContent=msg}function go(s){if(s<1||s>CFG.STEPS)return;document.querySelectorAll('.step').forEach(el=>{el.classList.remove('active');el.setAttribute('aria-hidden','true')});const t=document.querySelector(`.step[data-step="${s}"]`);if(t){t.classList.add('active');t.setAttribute('aria-hidden','false');t.querySelector('input,textarea,select,button')?.focus()}state.step=s;updProg();updBtn();window.dispatchEvent(new CustomEvent('pb:step',{detail:{step:s}}))}function next(){if(!valid(state.step))return;go(state.step+1)}function prev(){if(state.step>1)go(state.step-1)}function reset(){if(!confirm('Очистить форму и удалить черновик?'))return;form.reset();state.fields={};store.clear();go(1);document.querySelectorAll('.error-msg').forEach(e=>e.remove())}function updProg(){const p=(state.step/CFG.STEPS)*100;if(pb)pb.style.width=`${p}%`;if(ps)ps.forEach((li,i)=>{const n=i+1;li.classList.remove('active','completed');li.removeAttribute('aria-current');if(n===state.step){li.classList.add('active');li.setAttribute('aria-current','step')}else if(n<state.step)li.classList.add('completed')})}function updBtn(){document.querySelectorAll('.btn-back').forEach(b=>b.disabled=state.step===1);document.querySelectorAll('.btn-next').forEach(b=>{const last=state.step===CFG.STEPS-1;b.disabled=last;b.textContent=last?'Получить промпт':'Далее'})}function collect(){const d={};form.querySelectorAll('input,textarea,select').forEach(el=>{const k=el.id||el.name;if(!k)return;if(el.type==='checkbox'){if(el.name==='needs'){d[k]=d[k]||[];if(el.checked)d[k].push(el.value)}else d[k]=el.checked}else d[k]=el.value});state.fields=d;store.set({fields:d,step:state.step})}function apply(saved){if(!saved?.fields)return;for(const[k,v]of Object.entries(saved.fields)){const el=form.querySelector(`[id="${k}"],[name="${k}"]`);if(!el)continue;if(el.type==='checkbox'){if(Array.isArray(v))form.querySelectorAll(`[name="${k}"]`).forEach(cb=>cb.checked=v.includes(cb.value));else el.checked=!!v}else if(el.type==='select-one')el.value=v;else el.value=v}if(saved.step)state.step=saved.step;go(state.step)}function onInput(e){collect();const t=e.target;if(t.getAttribute('aria-invalid")==='true'){t.removeAttribute('aria-invalid');const er=t.closest('.form-group')?.querySelector('.error-msg');if(er)er.remove()}}function onClick(e){const t=e.target;if(t.matches('.btn-next')){e.preventDefault();next()}else if(t.matches('.btn-back')){e.preventDefault();prev()}else if(t.matches('.btn-reset')){e.preventDefault();reset()}}function init(){form=document.getElementById('prompt-builder');if(!form)return;pb=document.getElementById('progress-fill');ps=document.getElementById('progress-steps')?.querySelectorAll('li');apply(store.get());if(state.step===1&&!Object.keys(state.fields).length)go(1);form.addEventListener('input',onInput,{passive:!0});form.addEventListener('change',onInput,{passive:!0});form.addEventListener('click',onClick);window.PromptWizard={nextStep:next,prevStep:prev,resetForm:reset,getState:()=>JSON.parse(JSON.stringify(state)),injectStep:d=>{if(d)apply(d)}}}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();})();
+
+  // === MODULE 2: PROMPT BUILDER ===
+  (function(){'use strict';function sanitize(s){if(typeof s!=='string')return'';return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;')}const RM={'jurist-praktik':'Юрист-практик РФ','pravovoy-navigator':'Правовой навигатор','sudebniy-strateg':'Судебный стратег'};const FM={'step-by-step':'Пошаговая инструкция',table:'Таблица с пояснениями','checklist-focus':'Чек-лист + образцы',comprehensive:'Развёрнутый разбор'};function build(st){const f=st.fields||{},S=sanitize;const rt=RM[f.role_preset]||f.role_preset||'Юрист-практик РФ';const ft=FM[f.format]||f.format||'Пошаговая инструкция';const nl=Array.isArray(f.needs)?f.needs.join(', '):'';const sc=f.strict_citations?'• Каждый правовой тезис сопровождай точной ссылкой: НПА, номер, статья, редакция. Если норма отменена или изменена — укажи это. Не генерируй вымышленные статьи.':'';const dm=f.dialogue_mode?'• РЕЖИМ ДИАЛОГА: Если в описании недостаточно фактов для правовой квалификации, НЕ давай совет сразу. Сначала задай 3-5 уточняющих вопросов списком. Дождись ответов пользователя, затем формируй рекомендацию.':'';const cl=nl.toLowerCase().includes('чек-лист')?`[ЧЕК-ЛИСТ]
+• Создай практический чек-лист для пользователя.
+• Формат: нумерованный список. Каждый пункт = конкретное действие/документ/проверка + чёткий критерий выполнения (✅/❌) + срок или ответственный.
+• Без абстракций. Только шаги, которые можно отметить галочкой.`:'';return `[РОЛЬ] Ты — ${S(rt)}, эксперт по действующему праву РФ.
+[ЦЕЛЬ] Задача пользователя: ${S(f.goal||'получить консультацию по ситуации')}.
+[СФЕРА] Контекст: ${S(f.category||'не указана')}. Период событий: ${S(f.timeline||'не указан')}.
+[ДЕТАЛИЗАЦИЯ ЗАДАЧИ] Ситуация: ${S(f.situation||'не описана')}. Имеющиеся материалы/действия: ${S(f.context||'нет данных')}. Требуемый вывод: ${S(nl||'общая оценка')}.
+[АУДИТОРИЯ] Ответ для гражданина без юридического образования. Термины расшифровывай. Избегай воды.
+[ФОРМАТ] Структура ответа: ${S(ft)}.
+[УСЛОВИЯ И ОГРАНИЧЕНИЯ] 
+• Только законодательство РФ. Не ссылайся на иностранные акты.
+${sc}
+${dm}
+• Обязательно выдели блок: ⚠️ Риски, сроки исковой давности, процессуальные ограничения.
+• Дисклеймер в конце: "Информация носит справочный характер. Для судебной защиты или подготовки процессуальных документов обратитесь к адвокату/юристу."
+${cl}
+• Дополнительно: ${S(f.extra_constraints||'нет')}`}
+  }function render(txt){const el=document.getElementById('prompt-output');if(!el)return;el.textContent=txt}function initPB(){window.addEventListener('pb:step',e=>{if(e.detail.step===5){const st=window.PromptWizard?.getState();if(st){const p=build(st);render(p)}}});window.addEventListener('DOMContentLoaded',()=>{setTimeout(()=>{const w=window.PromptWizard;if(w&&w.getState().step===5){const p=build(w.getState());render(p)}},100)})}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initPB);else initPB();window.PromptBuilder={buildPrompt:build,sanitizeInput:sanitize,renderPrompt:render};})();
+
+  // === MODULE 3: ACTIONS & PROTECTION ===
+  (function(){'use strict';function protect(){document.addEventListener('contextmenu',e=>e.preventDefault());document.addEventListener('keydown',e=>{if(e.key==='F12'){e.preventDefault();e.stopPropagation()}if(e.ctrlKey&&['s','S','u','U'].includes(e.key)){e.preventDefault();e.stopPropagation()}});window.addEventListener('beforeunload',e=>{try{const w=window.PromptWizard;if(w&&w.getState().step<5){e.preventDefault();e.returnValue='У вас есть незавершённый черновик. Вы уверены, что хотите покинуть страницу?';return e.returnValue}}catch{}})}function actions(){const cb=document.getElementById('btn-copy'),sv=document.getElementById('btn-save'),cl=document.getElementById('btn-clear'),out=document.getElementById('prompt-output');if(cb&&out)cb.addEventListener('click',async()=>{const txt=out.textContent.trim();if(!txt)return;const orig=cb.textContent;cb.disabled=!0;try{if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(txt);else{const ta=document.createElement('textarea');ta.value=txt;ta.style.cssText='position:fixed;left:-9999px;opacity:0';document.body.appendChild(ta);ta.focus();ta.select();const ok=document.execCommand('copy');document.body.removeChild(ta);if(!ok)throw new Error('Fallback failed')}cb.textContent='✓ Скопировано!';setTimeout(()=>{cb.textContent=orig;cb.disabled=!1},2e3)}catch(err){console.error('Copy:',err);cb.textContent='❌ Ошибка';setTimeout(()=>{cb.textContent=orig;cb.disabled=!1},2e3)}});if(sv&&out)sv.addEventListener('click',()=>{const txt=out.textContent.trim();if(!txt)return;try{const blob=new Blob([txt],{type:'text/plain;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='prompt_instruction.txt';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url)}catch(err){console.error('Save:',err);alert('Не удалось создать файл. Скопируйте текст вручную.')}});if(cl)cl.addEventListener('click',()=>{if(confirm('Очистить форму и удалить сохранённый черновик? Данные будут потеряны.')){try{localStorage.removeItem('pb_v1');if(window.PromptWizard)window.PromptWizard.resetForm();if(out)out.textContent=''}catch(err){console.error('Clear:',err)}}})}function init(){protect();if(document.readyState==='complete')actions();else window.addEventListener('load',actions)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();})();
+
+  // Footer year
+  document.getElementById('cpy-year').textContent=new Date().getFullYear();
+  </script>
+  <!--
+  📦 РАЗМЕЩЕНИЕ:
+  1. Сохраните этот файл как index.html.
+  2. Загрузите на GitHub Pages / Netlify / Vercel / любой статический хостинг.
+  3. Для CSP: добавьте заголовок `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';`.
+  4. Готово. Приложение работает полностью в браузере пользователя.
+  -->
+</body>
+</html>
